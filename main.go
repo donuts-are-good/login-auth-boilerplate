@@ -2,9 +2,7 @@ package main
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"html/template"
@@ -61,6 +59,7 @@ func login(w http.ResponseWriter, r *http.Request) {
 	password := r.FormValue("password")
 
 	user, ok := users[email]
+
 	if !ok {
 		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
 		return
@@ -119,18 +118,12 @@ func register(w http.ResponseWriter, r *http.Request) {
 }
 
 func hashPassword(password string) (string, error) {
-	hash := sha256.Sum256([]byte(password))
-	prehashedPassword := hex.EncodeToString(hash[:])
-
-	bytes, err := bcrypt.GenerateFromPassword([]byte(prehashedPassword), 14)
+	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 14)
 	return string(bytes), err
 }
 
 func checkPassword(password, hashedPassword string) bool {
-	hash := sha256.Sum256([]byte(password))
-	prehashedPassword := hex.EncodeToString(hash[:])
-
-	err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(prehashedPassword))
+	err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password))
 	return err == nil
 }
 
