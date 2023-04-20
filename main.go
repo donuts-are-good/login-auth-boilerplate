@@ -2,11 +2,14 @@ package main
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"html/template"
 	"net/http"
+	"net/mail"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -17,16 +20,21 @@ type User struct {
 }
 
 var users = make(map[string]*User)
-var tmpl = template.Must(template.ParseFiles("templates/index.html", "templates/login.html", "templates/register.html"))
+var tmpl = template.Must(template.ParseFiles("templates/index.html", "templates/login.html", "templates/register.html", "templates/404.html"))
 
 func main() {
-	http.HandleFunc("/", index)
-	http.HandleFunc("/login", login)
-	http.HandleFunc("/register", register)
-	http.ListenAndServe(":8080", nil)
+	r := http.NewServeMux()
+	r.HandleFunc("/", index)
+	r.HandleFunc("/login", login)
+	r.HandleFunc("/register", register)
+	http.ListenAndServe(":8080", r)
 }
 
 func index(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		notFoundHandler(w, r)
+		return
+	}
 	tmpl.ExecuteTemplate(w, "index.html", nil)
 }
 
@@ -88,6 +96,11 @@ func register(w http.ResponseWriter, r *http.Request) {
 	email := r.FormValue("email")
 	password := r.FormValue("password")
 
+	if !isValidEmail(email) {
+		http.Error(w, "Invalid email format", http.StatusBadRequest)
+		return
+	}
+
 	if _, exists := users[email]; exists {
 		http.Error(w, "User already exists", http.StatusBadRequest)
 		return
@@ -106,12 +119,23 @@ func register(w http.ResponseWriter, r *http.Request) {
 }
 
 func hashPassword(password string) (string, error) {
-	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 14)
+	hash := sha256.Sum256([]byte(password))
+	prehashedPassword := hex.EncodeToString(hash[:])
+
+	bytes, err := bcrypt.GenerateFromPassword([]byte(prehashedPassword), 14)
 	return string(bytes), err
 }
 
 func checkPassword(password, hashedPassword string) bool {
-	err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password))
+	hash := sha256.Sum256([]byte(password))
+	prehashedPassword := hex.EncodeToString(hash[:])
+
+	err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(prehashedPassword))
+	return err == nil
+}
+
+func isValidEmail(email string) bool {
+	_, err := mail.ParseAddress(email)
 	return err == nil
 }
 
@@ -148,4 +172,9 @@ func verifyCSRFToken(r *http.Request) error {
 		return errors.New("invalid CSRF token")
 	}
 	return nil
+}
+
+func notFoundHandler(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotFound)
+	tmpl.ExecuteTemplate(w, "404.html", nil)
 }
