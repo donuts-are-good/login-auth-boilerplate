@@ -1,6 +1,9 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/base64"
+	"errors"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -14,11 +17,7 @@ type User struct {
 }
 
 var users = make(map[string]*User)
-var tmpl = template.Must(template.ParseFiles(
-	"templates/index.html",
-	"templates/login.html",
-	"templates/register.html",
-))
+var tmpl = template.Must(template.ParseFiles("templates/index.html", "templates/login.html", "templates/register.html"))
 
 func main() {
 	http.HandleFunc("/", index)
@@ -33,7 +32,20 @@ func index(w http.ResponseWriter, r *http.Request) {
 
 func login(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
+		token := setCSRFToken(w, r)
+		tmpl.ExecuteTemplate(w, "login.html", map[string]interface{}{
+			"csrfField": template.HTML(`<input type="hidden" name="csrf_token" value="` + token + `">`),
+		})
+		return
+	}
+
+	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := verifyCSRFToken(r); err != nil {
+		http.Error(w, "Invalid CSRF token", http.StatusBadRequest)
 		return
 	}
 
@@ -56,7 +68,20 @@ func login(w http.ResponseWriter, r *http.Request) {
 
 func register(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
+		token := setCSRFToken(w, r)
+		tmpl.ExecuteTemplate(w, "register.html", map[string]interface{}{
+			"csrfField": template.HTML(`<input type="hidden" name="csrf_token" value="` + token + `">`),
+		})
+		return
+	}
+
+	if r.Method != http.MethodPost {
 		tmpl.ExecuteTemplate(w, "register.html", nil)
+		return
+	}
+
+	if err := verifyCSRFToken(r); err != nil {
+		http.Error(w, "Invalid CSRF token", http.StatusBadRequest)
 		return
 	}
 
@@ -90,3 +115,37 @@ func checkPassword(password, hashedPassword string) bool {
 	return err == nil
 }
 
+func generateCSRFToken() string {
+	b := make([]byte, 32)
+	rand.Read(b)
+	return base64.StdEncoding.EncodeToString(b)
+}
+
+func setCSRFToken(w http.ResponseWriter, r *http.Request) string {
+	token := generateCSRFToken()
+	http.SetCookie(w, &http.Cookie{
+		Name:     "csrf_token",
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+	})
+	return token
+}
+
+func getCSRFToken(r *http.Request) string {
+	cookie, err := r.Cookie("csrf_token")
+	if err != nil {
+		return ""
+	}
+	return cookie.Value
+}
+
+func verifyCSRFToken(r *http.Request) error {
+	csrfToken := r.FormValue("csrf_token")
+	cookieToken := getCSRFToken(r)
+
+	if csrfToken == "" || cookieToken == "" || csrfToken != cookieToken {
+		return errors.New("invalid CSRF token")
+	}
+	return nil
+}
