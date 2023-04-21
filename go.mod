@@ -1,4 +1,4 @@
-module github.com/donuts-are-good/login-auth-boilerplate-go
+module github.com/donuts-are-good/login-auth-boilerplate
 
 go 1.20
 
